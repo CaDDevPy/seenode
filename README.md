@@ -158,7 +158,7 @@ MIT License - veja LICENSE para detalhes
 
 ## 👨‍💻 Autor
 
-Desenvolvido como exercício de Arquitetura de Sistemas Operacionais
+Desenvolvido por CaDDevPy como exercício de Arquitetura de Sistemas Operacionais.
 
 ---
 
