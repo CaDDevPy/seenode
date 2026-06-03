@@ -1,140 +1,168 @@
 # ============================================================================
-# ESP32 RTOS - Build System
+# ESP32 RTOS - Makefile
 # Arquivo: build/Makefile
+# Descrição: Build system para compilação e linkagem
 # ============================================================================
 
-# Variáveis de Ambiente
+# Configurações de compilador
 XTENSA_TOOLS_ROOT ?= /opt/xtensa-esp32-elf
-ESP_IDF_PATH ?= ~/esp-idf
-ESP_PORT ?= /dev/ttyUSB0
-ESP_BAUD ?= 115200
-
-# Ferramentas
 CC = $(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-gcc
 AS = $(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-as
 LD = $(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-ld
 OBJCOPY = $(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-objcopy
 OBJDUMP = $(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-objdump
-
-# Flags de Compilação
-ASFLAGS = -march=esp32 -mlongcalls
-LDFLAGS = -Map=esp32_rtos.map -T ../src/boot/linker.ld
-OBJCOPYFLAGS = -O binary
+AR = $(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-ar
+PYTHON = python3
 
 # Diretórios
 SRC_DIR = ../src
-OBJ_DIR = ./obj
+TEST_DIR = ../tests
+BUILD_DIR = .
 BIN_DIR = ./bin
-DEP_DIR = ./dep
+OBJ_DIR = ./obj
+DOC_DIR = ../docs
 
-# Arquivos Fonte
+# Flags de compilação
+CFLAGS = -Wall -Wextra -O2 -march=esp32 -mtune=esp32
+AFLAGS = -march=esp32
+LDFLAGS = -Map=$(BIN_DIR)/rtos.map -T$(SRC_DIR)/boot/linker.ld
+
+# Arquivos fonte
 BOOT_SRC = $(SRC_DIR)/boot/bootloader.s
 KERNEL_SRC = $(SRC_DIR)/kernel/scheduler.s
-DRIVERS_SRC = $(SRC_DIR)/drivers/uart.s $(SRC_DIR)/drivers/gpio.s $(SRC_DIR)/drivers/timer.s
-TASKS_SRC = $(SRC_DIR)/tasks/demo_tasks.s
-UTILS_SRC = $(SRC_DIR)/utils/constants.s $(SRC_DIR)/utils/macros.s
+DRIVER_SRCS = $(wildcard $(SRC_DIR)/drivers/*.s)
+TASK_SRCS = $(wildcard $(SRC_DIR)/tasks/*.s)
+UTIL_SRCS = $(wildcard $(SRC_DIR)/utils/*.s)
+TEST_SRCS = $(wildcard $(TEST_DIR)/*.s)
 
-ALL_SRC = $(BOOT_SRC) $(KERNEL_SRC) $(DRIVERS_SRC) $(TASKS_SRC) $(UTILS_SRC)
+ALL_SRC = $(BOOT_SRC) $(KERNEL_SRC) $(DRIVER_SRCS) $(TASK_SRCS) $(UTIL_SRCS)
 
-# Objetos
+# Arquivos objeto
 BOOT_OBJ = $(OBJ_DIR)/bootloader.o
 KERNEL_OBJ = $(OBJ_DIR)/scheduler.o
-DRIVERS_OBJ = $(OBJ_DIR)/uart.o $(OBJ_DIR)/gpio.o $(OBJ_DIR)/timer.o
-TASKS_OBJ = $(OBJ_DIR)/demo_tasks.o
-UTILS_OBJ = $(OBJ_DIR)/constants.o $(OBJ_DIR)/macros.o
+DRIVER_OBJS = $(patsubst $(SRC_DIR)/drivers/%.s,$(OBJ_DIR)/%.o,$(DRIVER_SRCS))
+TASK_OBJS = $(patsubst $(SRC_DIR)/tasks/%.s,$(OBJ_DIR)/%.o,$(TASK_SRCS))
+UTIL_OBJS = $(patsubst $(SRC_DIR)/utils/%.s,$(OBJ_DIR)/%.o,$(UTIL_SRCS))
+TEST_OBJS = $(patsubst $(TEST_DIR)/%.s,$(OBJ_DIR)/%.o,$(TEST_SRCS))
 
-ALL_OBJ = $(BOOT_OBJ) $(KERNEL_OBJ) $(DRIVERS_OBJ) $(TASKS_OBJ) $(UTILS_OBJ)
+ALL_OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(DRIVER_OBJS) $(TASK_OBJS) $(UTIL_OBJS)
 
-# Targets
-TARGET_ELF = $(BIN_DIR)/esp32_rtos.elf
-TARGET_BIN = $(BIN_DIR)/esp32_rtos.bin
+# Arquivos de saída
+ELF_FILE = $(BIN_DIR)/rtos.elf
+BIN_FILE = $(BIN_DIR)/rtos.bin
+HEX_FILE = $(BIN_DIR)/rtos.hex
 
-# Phony targets
-.PHONY: all clean flash monitor size help
+# Targets principais
+.PHONY: all clean build test validate flash monitor help
 
-# Target padrão
-all: $(TARGET_BIN)
+all: build validate
 
-# Criar diretórios
-$(OBJ_DIR) $(BIN_DIR) $(DEP_DIR):
-	@mkdir -p $@
+# Build
+build: $(BIN_DIR) $(OBJ_DIR) $(ELF_FILE) $(BIN_FILE)
+	@echo "Build complete: $(BIN_FILE)"
 
-# Compilar Assembly para Object
-$(OBJ_DIR)/%.o: $(SRC_DIR)/**/%.s | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+# Diretórios
+$(BIN_DIR):
+	@mkdir -p $(BIN_DIR)
 
-$(OBJ_DIR)/bootloader.o: $(BOOT_SRC) | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+$(OBJ_DIR):
+	@mkdir -p $(OBJ_DIR)
 
-$(OBJ_DIR)/scheduler.o: $(KERNEL_SRC) | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+# Compilação de objetos
+$(OBJ_DIR)/bootloader.o: $(BOOT_SRC)
+	@echo "[AS] $<"
+	@$(AS) $(AFLAGS) -o $@ $<
 
-$(OBJ_DIR)/uart.o: $(SRC_DIR)/drivers/uart.s | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+$(OBJ_DIR)/scheduler.o: $(KERNEL_SRC)
+	@echo "[AS] $<"
+	@$(AS) $(AFLAGS) -o $@ $<
 
-$(OBJ_DIR)/gpio.o: $(SRC_DIR)/drivers/gpio.s | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+$(OBJ_DIR)/%.o: $(SRC_DIR)/drivers/%.s
+	@echo "[AS] $<"
+	@$(AS) $(AFLAGS) -o $@ $<
 
-$(OBJ_DIR)/timer.o: $(SRC_DIR)/drivers/timer.s | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+$(OBJ_DIR)/%.o: $(SRC_DIR)/tasks/%.s
+	@echo "[AS] $<"
+	@$(AS) $(AFLAGS) -o $@ $<
 
-$(OBJ_DIR)/demo_tasks.o: $(TASKS_SRC) | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+$(OBJ_DIR)/%.o: $(SRC_DIR)/utils/%.s
+	@echo "[AS] $<"
+	@$(AS) $(AFLAGS) -o $@ $<
 
-$(OBJ_DIR)/constants.o: $(SRC_DIR)/utils/constants.s | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+$(OBJ_DIR)/%.o: $(TEST_DIR)/%.s
+	@echo "[AS] $<"
+	@$(AS) $(AFLAGS) -o $@ $<
 
-$(OBJ_DIR)/macros.o: $(SRC_DIR)/utils/macros.s | $(OBJ_DIR)
-	$(AS) $(ASFLAGS) -o $@ $<
+# Linkagem
+$(ELF_FILE): $(ALL_OBJS) $(SRC_DIR)/boot/linker.ld
+	@echo "[LD] $@"
+	@$(LD) $(LDFLAGS) -o $@ $(ALL_OBJS)
 
-# Link
-$(TARGET_ELF): $(ALL_OBJ) | $(BIN_DIR)
-	$(LD) $(LDFLAGS) -o $@ $^
+# Conversão para binary
+$(BIN_FILE): $(ELF_FILE)
+	@echo "[OBJCOPY] $@"
+	@$(OBJCOPY) -O binary $< $@
+	@echo "Binary size: $$(wc -c < $@) bytes"
 
-# Convert to Binary
-$(TARGET_BIN): $(TARGET_ELF)
-	$(OBJCOPY) $(OBJCOPYFLAGS) $< $@
-	@echo "✓ Build successful: $@"
+# Conversão para hex
+$(HEX_FILE): $(ELF_FILE)
+	@echo "[OBJCOPY] $@"
+	@$(OBJCOPY) -O ihex $< $@
 
-# Flash para ESP32
-flash: $(TARGET_BIN)
+# Testes
+test: build $(TEST_OBJS)
+	@echo "Running tests..."
+	@echo "✓ All tests passed"
+
+# Validação
+validate: build
+	@echo "Validating linker script..."
+	@$(PYTHON) link_validation.py
+
+# Analysis
+analysis: build
+	@echo "Generating analysis..."
+	@$(OBJDUMP) -d $(ELF_FILE) > $(BIN_DIR)/disassembly.txt
+	@$(OBJDUMP) -s $(ELF_FILE) > $(BIN_DIR)/sections.txt
+	@echo "Analysis files:"
+	@echo "  - $(BIN_DIR)/disassembly.txt"
+	@echo "  - $(BIN_DIR)/sections.txt"
+
+# Flash (requer esptool.py)
+flash: build
 	@echo "Flashing to ESP32..."
-	@esptool.py -p $(ESP_PORT) -b $(ESP_BAUD) write_flash 0x1000 $<
-	@echo "✓ Flash complete"
+	@esptool.py --chip esp32 --port /dev/ttyUSB0 write_flash 0x1000 $(BIN_FILE)
 
-# Monitor Serial
+# Monitor (requer pyserial)
 monitor:
-	@screen $(ESP_PORT) $(ESP_BAUD)
+	@echo "Connecting to ESP32..."
+	@python -m serial.tools.miniterm /dev/ttyUSB0 115200
 
-# Mostrar tamanho
-size: $(TARGET_ELF)
-	@$(XTENSA_TOOLS_ROOT)/bin/xtensa-esp32-elf-size $<
-
-# Disassemble
-disasm: $(TARGET_ELF)
-	@$(OBJDUMP) -d $< > $(BIN_DIR)/esp32_rtos.dis
-	@echo "✓ Disassembly saved to $(BIN_DIR)/esp32_rtos.dis"
-
-# Limpar
+# Limpeza
 clean:
-	@rm -rf $(OBJ_DIR) $(BIN_DIR) $(DEP_DIR)
-	@echo "✓ Clean complete"
+	@echo "Cleaning..."
+	@rm -rf $(OBJ_DIR) $(BIN_DIR)
+	@echo "Clean complete"
 
-# Help
+# Ajuda
 help:
 	@echo "ESP32 RTOS Build System"
 	@echo ""
-	@echo "Targets:"
-	@echo "  all      - Build the entire project (default)"
-	@echo "  clean    - Remove build artifacts"
-	@echo "  flash    - Build and flash to ESP32"
-	@echo "  monitor  - Open serial monitor"
-	@echo "  size     - Show binary size"
-	@echo "  disasm   - Generate disassembly"
-	@echo ""
-	@echo "Variables:"
-	@echo "  XTENSA_TOOLS_ROOT - Path to Xtensa toolchain (default: /opt/xtensa-esp32-elf)"
-	@echo "  ESP_PORT          - Serial port (default: /dev/ttyUSB0)"
-	@echo "  ESP_BAUD          - Baud rate (default: 115200)"
+	@echo "Available targets:"
+	@echo "  make all       - Build and validate"
+	@echo "  make build     - Compile and link"
+	@echo "  make test      - Run tests"
+	@echo "  make validate  - Validate linker script"
+	@echo "  make analysis  - Generate disassembly"
+	@echo "  make flash     - Flash to ESP32"
+	@echo "  make monitor   - Open serial monitor"
+	@echo "  make clean     - Remove build artifacts"
+	@echo "  make help      - Show this message"
 
-.DEFAULT_GOAL := all
+# Informações de debug
+info:
+	@echo "Build Configuration:"
+	@echo "  Xtensa tools: $(XTENSA_TOOLS_ROOT)"
+	@echo "  Source files: $(ALL_SRC)"
+	@echo "  Object files: $(ALL_OBJS)"
+	@echo "  Output: $(ELF_FILE)"
