@@ -76,7 +76,7 @@ task_custom_check_yield:
     j task_custom_loop
 
 ; ============================================================================
-; VARIAÇÕES: Templates Especializados
+; VARIAÇÕES: Templates Especializados (ATUALIZADOS PARA USAR SEÇÕES CRÍTICAS)
 ; ============================================================================
 
 ; ===== Tarefa com Timeout =====
@@ -210,6 +210,7 @@ task_cb_yield:
     j task_cb_loop
 
 ; ===== Tarefa com Sincronização (semáforo simulado) =====
+; Atualizado para usar CRITICAL_SECTION_START/END ao acessar recurso compartilhado
 task_template_synchronized:
     entry a1, 32
     
@@ -228,16 +229,17 @@ task_sync_acquire:
     ; Semáforo adquirido
     movi a11, 0             ; Lock
     
-    ; Seção crítica
-    movi a2, msg_critical_section
-    call uart_puts
-    
-    ; Simular trabalho
-    movi a10, 0
-    movi a12, 10000
-task_sync_work:
-    addi a10, a10, 1
-    blt a10, a12, task_sync_work
+    ; Seção crítica: protegida por CRITICAL_SECTION macros
+    CRITICAL_SECTION_START
+        movi a2, msg_critical_section
+        call uart_puts
+        ; Simular trabalho (não bloqueante)
+        movi a10, 0
+        movi a12, 10000
+    task_sync_work:
+        addi a10, a10, 1
+        blt a10, a12, task_sync_work
+    CRITICAL_SECTION_END
     
     ; Liberar semáforo
     movi a11, 1             ; Unlock
