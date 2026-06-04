@@ -217,28 +217,39 @@ delay_loop_\@:
     call scheduler_yield
 .endm
 
+; -----------------------------------------------------------------------------
+; Melhorias em DISABLE/ENABLE INTERRUPTS e SEÇÕES CRÍTICAS
+; Objetivo:
+; - Salvar o valor atual do SR (Status Register) na pilha ao entrar na seção crítica
+; - Restaurar o SR ao sair, permitindo aninhamento correto de seções críticas
+; - Evitar perda do estado anterior de IE e preservar o fluxo de execução
+; Observação: estas macros usam registradores temporários (a14,a15) e
+; empilham o SR na pilha usando PUSH_REG/POP_REG, portanto respeite a
+; convenção de que a1 é o ponteiro de pilha.
+; -----------------------------------------------------------------------------
+
 .macro DISABLE_INTERRUPTS
-    ; Desabilitar interrupções
-    rsr a15, sr
-    movi a14, ~0x8
-    and a15, a15, a14
-    wsr a15, sr
+    ; Salva SR na pilha e desabilita IE (bit 3)
+    rsr a15, sr              ; a15 = SR
+    PUSH_REG a15             ; push SR
+    movi a14, ~0x8           ; máscara para limpar bit IE
+    and a15, a15, a14        ; a15 = SR & ~IE
+    wsr a15, sr              ; write SR
 .endm
 
 .macro ENABLE_INTERRUPTS
-    ; Habilitar interrupções
-    rsr a15, sr
-    ori a15, a15, 0x8
-    wsr a15, sr
+    ; Restaura SR da pilha (restaura o estado anterior de IE)
+    POP_REG a15              ; pop SR (para a15)
+    wsr a15, sr              ; restore SR
 .endm
 
 .macro CRITICAL_SECTION_START
-    ; Iniciar seção crítica (desabilitar interrupções)
+    ; Iniciar seção crítica: salva SR e desabilita interrupções
     DISABLE_INTERRUPTS
 .endm
 
 .macro CRITICAL_SECTION_END
-    ; Finalizar seção crítica (reabilitar interrupções)
+    ; Finalizar seção crítica: restaura SR salvo anteriormente
     ENABLE_INTERRUPTS
 .endm
 
