@@ -253,6 +253,49 @@ delay_loop_\@:
     ENABLE_INTERRUPTS
 .endm
 
+; -----------------------------------------------------------------------------
+; ISR-safe critical-section (não empilha SR na pilha da tarefa)
+; Use em handlers/ISRs que não devem modificar a pilha da tarefa.
+; -----------------------------------------------------------------------------
+
+.macro CRITICAL_SECTION_ISR_START
+    ; Desabilita IE (bit 3) sem tocar a pilha da tarefa
+    rsr a15, sr
+    movi a14, ~0x8
+    and a15, a15, a14
+    wsr a15, sr
+.endm
+
+.macro CRITICAL_SECTION_ISR_END
+    ; Re-habilita IE (habilita globalmente)
+    rsr a15, sr
+    ori a15, a15, 0x8
+    wsr a15, sr
+.endm
+
+; -----------------------------------------------------------------------------
+; Versões que preservam temporários a14/a15 (automático)
+; - DISABLE_INTERRUPTS_PRESERVE / ENABLE_INTERRUPTS_PRESERVE
+; Implementação: empilha a14/a15, empilha SR, desabilita IE; ao sair restaura SR e temporários.
+; -----------------------------------------------------------------------------
+
+.macro DISABLE_INTERRUPTS_PRESERVE
+    PUSH_REG a14            ; preserve a14
+    PUSH_REG a15            ; preserve a15
+    rsr a15, sr             ; read SR
+    PUSH_REG a15            ; push original SR
+    movi a14, ~0x8
+    and a15, a15, a14      ; clear IE
+    wsr a15, sr
+.endm
+
+.macro ENABLE_INTERRUPTS_PRESERVE
+    POP_REG a15             ; restore SR (into a15)
+    wsr a15, sr             ; restore full SR
+    POP_REG a15             ; restore previously saved a15
+    POP_REG a14             ; restore previously saved a14
+.endm
+
 ; ============================================================================
 ; Macros de Context Switching
 ; ============================================================================
